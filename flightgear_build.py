@@ -443,104 +443,218 @@ def download_simgear(source_dir, stable=True, update=True):
 
     if not os.path.exists(source_dir):
         logger.debug("SimGear: Running git clone to obtain a fresh copy")
-        run('git', 'clone', OPENRTI_REPO, source_dir)
+        run('git', 'clone', SIMGEAR_REPO, source_dir)
 
     ## Ok, now select the appropriate branch
     select_git_branch(source_dir, git_branch)
 
 
-# OPENRTI_INSTALL_DIR=openrti
-# INSTALL_DIR_OPENRTI=$INSTALL_DIR/$OPENRTI_INSTALL_DIR
-# cd "$CBD"
+def build_simgear(build_dir, install_dir, stable=True, update=True,
+        reconfigure=True, clean=False, make_flags=None):
+    logger.info("Building SimGear")
+    source_dir = os.path.join(build_dir, 'src', 'simgear')
+    build_dir = os.path.join(build_dir, 'build', 'simgear')
 
-# if [ ! -d "openrti" ]
-# then
-#     mkdir "openrti"
+    GLOBAL_CONFIG['simgear:source_dir'] = source_dir
+    GLOBAL_CONFIG['simgear:build_dir'] = build_dir
+    GLOBAL_CONFIG['simgear:install_dir'] = install_dir
+
+    download_simgear(source_dir, stable=stable, update=update)
+
+    if reconfigure:
+        logger.debug("SimGear: reconfiguring")
+        with chdir(build_dir):
+            cmakecache_file = os.path.join(source_dir, 'CMakeCache.txt')
+            if os.path.exists(cmakecache_file):
+                os.unlink(cmakecache_file)
+            run('cmake',
+                '-D', 'CMAKE_BUILD_TYPE=Release',
+                '-D', 'ENABLE_RTI=ON',
+                '-D', 'CMAKE_CXX_FLAGS=-O3 -D__STDC_CONSTANT_MACROS',
+                '-D', 'CMAKE_C_FLAGS=-O3',
+                '-D', 'CMAKE_INSTALL_PREFIX:PATH={}'.format(install_dir),
+                '-D', "CMAKE_PREFIX_PATH={}".format(install_dir),
+                source_dir)
+
+    with chdir(build_dir):
+        logger.info("SimGear: Running make")
+        run('make', *(make_flags or ()))
+
+        logger.info("SimGear: Running make install")
+        run('make', 'install')
+
+
+##==============================================================================
+## FlightGear
+##==============================================================================
+
+FGFS_STABLE = "version/2.10.0-final"
+FGFS_REPO = "git://gitorious.org/fg/flightgear.git"
+
+
+def download_fgfs(source_dir, stable=True, update=True):
+    git_branch = FGFS_STABLE if stable else 'master'
+
+    need_move = False
+
+    if os.path.exists(source_dir):
+        if not update:
+            logger.debug("FlightGear: Old directory found -- moving since update=False")
+            need_move = True
+
+        elif not os.path.exists(os.path.join(source_dir, '.git')):
+            logger.warning("FlightGear: source directory doesn't appear to be a "
+                           "git repository clone. Moving and starting over.")
+            need_move = True
+
+    if need_move:
+        tmp_name = "{}.{}".format(source_dir, int(time.time()))
+        os.rename(source_dir, tmp_name)
+
+    if not os.path.exists(source_dir):
+        logger.debug("FlightGear: Running git clone to obtain a fresh copy")
+        run('git', 'clone', FGFS_REPO, source_dir)
+
+    ## Ok, now select the appropriate branch
+    select_git_branch(source_dir, git_branch)
+
+
+FGFS_RUN_SCRIPT = """\
+#!/usr/bin/env python
+
+import sys, os
+INSTALL_DIR = os.path.dirname(__file__)
+FGFS_BIN = os.path.join(INSTALL_DIR, 'bin', 'fgfs')
+FGDATA_DIR = os.path.join(INSTALL_DIR, 'fgdata')
+FGFS_ARGS = ['--fg-root={}'.format(FGDATA_DIR)] + sys.argv
+FGFS_ENV = {'LD_LIBRARY_PATH': os.path.join(INSTALL_DIR, 'lib')}
+os.execve(FGFS_BIN, FGFS_ARGS, FGFS_ENV)
+"""
+
+FGFS_RUN_DEBUG_SCRIPT = """\
+#!/usr/bin/env python
+
+import sys, os
+INSTALL_DIR = os.path.dirname(__file__)
+SOURCES_DIR = '{sources_dir}'
+FGFS_BIN = os.path.join(INSTALL_DIR, 'bin', 'fgfs')
+FGDATA_DIR = os.path.join(INSTALL_DIR, 'fgdata')
+FGFS_ARGS = ['--fg-root={}'.format(FGDATA_DIR)] + sys.argv
+FGFS_ENV = {'LD_LIBRARY_PATH': os.path.join(INSTALL_DIR, 'lib')}
+GDB_ARGS = ['--directory={}'.format(SOURCES_DIR), '--args'] + FGFS_ARGS
+os.execpve('gdb', GDB_ARGS FGFS_ENV)
+"""
+
+TERRASYNC_RUN_SCRIPT = """\
+#!/usr/bin/env python
+
+import sys, os
+INSTALL_DIR = os.path.dirname(__file__)
+TERRASYNC_BIN = os.path.join(INSTALL_DIR)
+TERRASYNC_ARGS = sys.argv
+TERRASYNC_ENV = {'LD_LIBRARY_PATH': os.path.join(INSTALL_DIR, 'lib')}
+os.execve(TERRASYNC_BIN, TERRASYNC_ARGS, TERRASYNC_ENV)
+"""
+
+
+def build_fgfs(build_dir, install_dir, stable=True, update=True,
+        reconfigure=True, clean=False, make_flags=None):
+    logger.info("Building FlightGear")
+    source_dir = os.path.join(build_dir, 'src', 'fgfs')
+    build_dir = os.path.join(build_dir, 'build', 'fgfs')
+
+    GLOBAL_CONFIG['fgfs:source_dir'] = source_dir
+    GLOBAL_CONFIG['fgfs:build_dir'] = build_dir
+    GLOBAL_CONFIG['fgfs:install_dir'] = install_dir
+
+    download_fgfs(source_dir, stable=stable, update=update)
+
+    if reconfigure:
+        logger.debug("FlightGear: reconfiguring")
+        with chdir(build_dir):
+            cmakecache_file = os.path.join(source_dir, 'CMakeCache.txt')
+            if os.path.exists(cmakecache_file):
+                os.unlink(cmakecache_file)
+            run('cmake',
+                '-D', "CMAKE_BUILD_TYPE=Release",
+                '-D', "CMAKE_CXX_FLAGS=-O3 -D__STDC_CONSTANT_MACROS",
+                '-D', "CMAKE_C_FLAGS=-O3",
+                '-D', "CMAKE_INSTALL_PREFIX:PATH={}".format(install_dir),
+                '-D', "CMAKE_PREFIX_PATH={}".format(install_dir),
+                '-D', 'ENABLE_RTI=ON',
+                '-D', "WITH_FGPANEL=OFF",
+                source_dir)
+
+    with chdir(build_dir):
+        logger.info("FlightGear: Running make")
+        run('make', *(make_flags or ()))
+
+        logger.info("FlightGear: Running make install")
+        run('make', 'install')
+
+    fgfs_run_script_name = os.path.join(install_dir, 'run_fgfs')
+    fgfs_debug_script_name = os.path.join(install_dir, 'run_fgfs_debug')
+    fgfs_terrasync_script_name = os.path.join(install_dir, 'run_terrasync')
+
+    with open(fgfs_run_script_name, 'w') as f:
+        f.write(FGFS_RUN_SCRIPT)
+    with open(fgfs_debug_script_name, 'w') as f:
+        f.write(FGFS_RUN_DEBUG_SCRIPT.format(source_dir=source_dir))
+    with open(fgfs_terrasync_script_name, 'w') as f:
+        f.write(TERRASYNC_RUN_SCRIPT)
+
+
+    ## Launcher scripts
+
+#     SCRIPT=run_terrasync.sh
+#     echo "#!/bin/sh" > $SCRIPT
+#     echo "cd \$(dirname \$0)" >> $SCRIPT
+#     echo "cd $SUB_INSTALL_DIR/$FGFS_INSTALL_DIR/bin" >> $SCRIPT
+#     echo "export LD_LIBRARY_PATH=../../$PLIB_INSTALL_DIR/lib:../../$OSG_INSTALL_DIR/lib:../../$SIMGEAR_INSTALL_DIR/lib" >> $SCRIPT
+#     echo "./terrasync \$@" >> $SCRIPT
+#     chmod 755 $SCRIPT
+
 # fi
 
-# if [ "$WHATTOBUILD" = "" -o "$WHATTOBUILD" = "OPENRTI" -o "$WHATTOBUILD" = "ALL" ]
-# then
-#     echo "****************************************" | tee -a $LOGFILE
-#     echo "**************** OPENRTI ***************" | tee -a $LOGFILE
-#     echo "****************************************" | tee -a $LOGFILE
 
 
-#     if [ "$DOWNLOAD" = "y" ]
-#     then
-#         cd openrti
-
-#         echo -n "git FROM git://gitorious.org/openrti/openrti.git ... " >> $LOGFILE
-
-#         if [ -d "openrti" ]
-#         then
-#             echo "openrti exists already."
-#         else
-#             git clone git://gitorious.org/openrti/openrti.git
-#         fi
-
-#         cd openrti
-
-#         git fetch origin
-#         if [ "$STABLE" = "STABLE" ]
-#         then
-#             # switch to stable branch
-#             # create local stable branch, ignore errors if it exists
-#             git branch -f $OPENRTI_STABLE_GIT_BRANCH origin/$OPENRTI_STABLE_GIT_BRANCH 2> /dev/null || true
-#             # switch to stable branch. No error is reported if we're already on the branch.
-#             git checkout -f $OPENRTI_STABLE_GIT_BRANCH
-#             # get indicated stable version
-#             git reset --hard $OPENRTI_STABLE_REVISION
-#         else
-#             # switch to unstable branch
-#             # create local unstable branch, ignore errors if it exists
-#             git branch -f $OPENRTI_UNSTABLE_GIT_BRANCH origin/$OPENRTI_UNSTABLE_GIT_BRANCH 2> /dev/null || true
-#             # switch to unstable branch. No error is reported if we're already on the branch.
-#             git checkout -f $OPENRTI_UNSTABLE_GIT_BRANCH
-#             # pull latest version from the unstable branch
-#             git pull
-#         fi
-
-#         cd ..
-
-#         echo " OK" >> $LOGFILE
-#         cd ..
-
-#     fi
-
-#     cd "openrti/openrti"
-
-#     if [ ! "$UPDATE" = "UPDATE" ]
-#     then
-#         if [ "$RECONFIGURE" = "y" ]
-#         then
-
-#             cd "$CBD"
-#             mkdir -p build/openrti
-#             cd "$CBD"/build/openrti
-#             echo -n "RECONFIGURE OPENRTI ... " >> $LOGFILE
-#             rm -f ../../openrti/openrti/CMakeCache.txt
-#             cmake -D CMAKE_BUILD_TYPE="Release" -D CMAKE_CXX_FLAGS="-O3 -D__STDC_CONSTANT_MACROS" -D CMAKE_INSTALL_PREFIX:PATH="$INSTALL_DIR_OPENRTI" ../../openrti/openrti/ 2>&1 | tee -a $LOGFILE
-#             echo " OK" >> $LOGFILE
+FGFS_DATA_STABLE = "version/2.10.0-final"
+FGFS_DATA_REPO = "git://gitorious.org/fg/fgdata.git"
 
 
 
-#         fi
-#     fi
+##==============================================================================
+## FlightGear data
+##==============================================================================
 
-#     if [ "$COMPILE" = "y" ]
-#     then
+def download_fgdata(install_dir, stable=True, update=True):
+    git_branch = FGFS_DATA_STABLE if stable else 'master'
 
+    fgdata_install_dir = os.path.join(install_dir, 'fgdata')
+    GLOBAL_CONFIG['fgdata:install_dir'] = fgdata_install_dir
 
-#         cd "$CBD"/build/openrti
-#         echo "MAKE OPENRTI" >> $LOGFILE
-#         echo "make $JOPTION $OOPTION " >> $LOGFILE
-#         make $JOPTION $OOPTION 2>&1 | tee -a $LOGFILE
+    need_move = False
 
-#         echo "INSTALL OPENRTI" >> $LOGFILE
-#         make install 2>&1 | tee -a $LOGFILE
-#     fi
-#     cd -
-# fi
+    if os.path.exists(fgdata_install_dir):
+        if not update:
+            logger.debug("FGData: Old directory found -- moving since update=False")
+            need_move = True
+
+        elif not os.path.exists(os.path.join(fgdata_install_dir, '.git')):
+            logger.warning("FGData: source directory doesn't appear to be a "
+                           "git repository clone. Moving and starting over.")
+            need_move = True
+
+    if need_move:
+        tmp_name = "{}.{}".format(fgdata_install_dir, int(time.time()))
+        os.rename(fgdata_install_dir, tmp_name)
+
+    if not os.path.exists(fgdata_install_dir):
+        logger.debug("FGData: Running git clone to obtain a fresh copy")
+        run('git', 'clone', FGFS_DATA_REPO, fgdata_install_dir)
+
+    ## Ok, now select the appropriate branch
+    select_git_branch(fgdata_install_dir, git_branch)
 
 
 
@@ -570,15 +684,23 @@ if __name__ == '__main__':
     GLOBAL_CONFIG['install_dir'] = INSTALL_DIR
 
     #install_packages()
-    # build_plib(
-    #     build_dir=BUILD_DIR,
-    #     install_dir=INSTALL_DIR,
-    #     make_flags=MAKEOPTS)
-    # build_openscenegraph(
-    #     build_dir=BUILD_DIR,
-    #     install_dir=INSTALL_DIR,
-    #     make_flags=MAKEOPTS)
+    build_plib(
+        build_dir=BUILD_DIR,
+        install_dir=INSTALL_DIR,
+        make_flags=MAKEOPTS)
+    build_openscenegraph(
+        build_dir=BUILD_DIR,
+        install_dir=INSTALL_DIR,
+        make_flags=MAKEOPTS)
     build_openrti(
+        build_dir=BUILD_DIR,
+        install_dir=INSTALL_DIR,
+        make_flags=MAKEOPTS)
+    build_simgear(
+        build_dir=BUILD_DIR,
+        install_dir=INSTALL_DIR,
+        make_flags=MAKEOPTS)
+    build_fgfs(
         build_dir=BUILD_DIR,
         install_dir=INSTALL_DIR,
         make_flags=MAKEOPTS)
