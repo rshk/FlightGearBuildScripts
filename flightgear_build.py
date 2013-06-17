@@ -519,6 +519,19 @@ def download_fgfs(source_dir, stable=True, update=True):
     select_git_branch(source_dir, git_branch)
 
 
+## To be placed in {prefix}/run and symlinked
+GENERIC_RUN_SCRIPT = """\
+#!/usr/bin/env python
+
+import sys, os
+INSTALL_DIR = os.path.dirname(os.path.dirname(__file__))1
+BIN_NAME = os.path.basename(sys.argv[0])
+BIN_PATH = os.path.join(INSTALL_DIR, 'bin', BIN_NAME)
+ARGS = sys.argv[1:]
+ENV = {'LD_LIBRARY_PATH': os.path.join(INSTALL_DIR, 'lib')}
+os.execve(BIN_PATH, ARGS, ENV)
+"""
+
 FGFS_RUN_SCRIPT = """\
 #!/usr/bin/env python
 
@@ -526,7 +539,7 @@ import sys, os
 INSTALL_DIR = os.path.dirname(__file__)
 FGFS_BIN = os.path.join(INSTALL_DIR, 'bin', 'fgfs')
 FGDATA_DIR = os.path.join(INSTALL_DIR, 'fgdata')
-FGFS_ARGS = ['--fg-root={}'.format(FGDATA_DIR)] + sys.argv
+FGFS_ARGS = ['--fg-root={}'.format(FGDATA_DIR)] + sys.argv[1:]
 FGFS_ENV = {'LD_LIBRARY_PATH': os.path.join(INSTALL_DIR, 'lib')}
 os.execve(FGFS_BIN, FGFS_ARGS, FGFS_ENV)
 """
@@ -539,7 +552,7 @@ INSTALL_DIR = os.path.dirname(__file__)
 SOURCES_DIR = '{sources_dir}'
 FGFS_BIN = os.path.join(INSTALL_DIR, 'bin', 'fgfs')
 FGDATA_DIR = os.path.join(INSTALL_DIR, 'fgdata')
-FGFS_ARGS = ['--fg-root={}'.format(FGDATA_DIR)] + sys.argv
+FGFS_ARGS = ['--fg-root={}'.format(FGDATA_DIR)] + sys.argv[1:]
 FGFS_ENV = {'LD_LIBRARY_PATH': os.path.join(INSTALL_DIR, 'lib')}
 GDB_ARGS = ['--directory={}'.format(SOURCES_DIR), '--args'] + FGFS_ARGS
 os.execpve('gdb', GDB_ARGS FGFS_ENV)
@@ -551,7 +564,7 @@ TERRASYNC_RUN_SCRIPT = """\
 import sys, os
 INSTALL_DIR = os.path.dirname(__file__)
 TERRASYNC_BIN = os.path.join(INSTALL_DIR)
-TERRASYNC_ARGS = sys.argv
+TERRASYNC_ARGS = sys.argv[1:]
 TERRASYNC_ENV = {'LD_LIBRARY_PATH': os.path.join(INSTALL_DIR, 'lib')}
 os.execve(TERRASYNC_BIN, TERRASYNC_ARGS, TERRASYNC_ENV)
 """
